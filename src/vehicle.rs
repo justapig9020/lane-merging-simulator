@@ -1,4 +1,7 @@
+use std::collections::VecDeque;
+
 use bevy::prelude::*;
+use bevy_physimple::prelude::*;
 use pid::Pid;
 
 // unit:
@@ -61,7 +64,6 @@ impl Vehicle {
     }
     pub fn update_speed(&mut self, distance: f32, delta_t: f32) {
         let result = self.controller.next_control_output(distance);
-        println!("result: {:?}", result);
         let output = result.output;
 
         let acc = if output >= 0.0 {
@@ -69,7 +71,6 @@ impl Vehicle {
         } else {
             output * self.max_break
         };
-        println!("acc: {acc}");
         self.speed = f32::max(
             f32::min(self.max_speed, self.speed + acc * delta_t),
             self.max_speed * -1.0,
@@ -77,5 +78,19 @@ impl Vehicle {
     }
 }
 
-#[derive(Component)]
-pub struct Destination(pub Vec2);
+#[derive(Component, Default, Debug)]
+pub struct Destination {
+    dests: VecDeque<(Entity, Vec2)>,
+}
+
+impl Destination {
+    pub fn next(&self) -> Option<&(Entity, Vec2)> {
+        self.dests.get(0)
+    }
+    pub fn push(&mut self, entity: Entity, position: Vec2) {
+        self.dests.push_back((entity, position));
+    }
+    pub fn arrive(&mut self) {
+        self.dests.pop_front();
+    }
+}

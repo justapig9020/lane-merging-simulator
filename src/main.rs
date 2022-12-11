@@ -30,6 +30,7 @@ fn main() {
         .add_system(vehicle_update_direction)
         .add_system(vehicle_movement_sys.after(vehicle_update_speed_sys))
         .add_system(move_vehicle_sys.after(vehicle_movement_sys))
+        .add_system(arrive_sys.after(move_vehicle_sys))
         .add_system(set_target_sys);
     app.run();
 }
@@ -52,7 +53,7 @@ fn setup_sys(mut coms: Commands, a_server: Res<AssetServer>) {
         ..Default::default()
     })
     .insert(Vehicle::default())
-    .insert(Destination(Vec2::ZERO))
+    .insert(Destination::default())
     .insert(icon);
 }
 
@@ -61,16 +62,20 @@ fn vehicle_update_speed_sys(
     mut q: Query<(&Transform, &mut Vehicle, &Destination)>,
 ) {
     for (tran, mut veh, dest) in q.iter_mut() {
-        let tran = tran.translation.truncate();
-        let diff = dest.0 - tran;
-        let forward = diff.dot(veh.direction) >= 0.0;
-        let error = if forward {
-            diff.length() * -1.0
-        } else {
-            diff.length()
-        } / SCALE;
-        println!("error: {error}");
-        veh.update_speed(error, time.delta_seconds());
+        if let Some((_, dest)) = dest.next() {
+            let veh_position = tran.translation.truncate();
+            println!("veh: {veh_position}");
+            println!("dest: {dest}");
+            let diff = *dest - veh_position;
+            let forward = diff.dot(veh.direction) >= 0.0;
+            let error = if forward {
+                diff.length() * -1.0
+            } else {
+                diff.length()
+            } / SCALE;
+            println!("error: {error}");
+            veh.update_speed(error, time.delta_seconds());
+        }
     }
 }
 
@@ -79,20 +84,22 @@ fn vehicle_update_direction(
     mut q: Query<(&mut Transform, &mut Vehicle, &Destination)>,
 ) {
     for (mut tran, mut veh, dest) in q.iter_mut() {
-        let local = tran.translation.truncate();
-        let diff = (dest.0 - local).normalize_or_zero();
-        if diff.length() != 0.0 {
-            let veh_direction = veh.direction;
-            let angle = veh_direction.angle_between(diff);
-            let angle = if angle >= 0.0 {
-                f32::min(angle, 0.7)
-            } else {
-                f32::max(angle, -0.7)
-            } * time.delta_seconds();
-            let quat = Quat::from_axis_angle(Vec3::Z, angle);
-            tran.rotation *= quat;
-            let rotate = Vec2::from_angle(angle);
-            veh.direction = rotate.rotate(veh.direction);
+        if let Some((_, dest)) = dest.next() {
+            let local = tran.translation.truncate();
+            let diff = (*dest - local).normalize_or_zero();
+            if diff.length() != 0.0 {
+                let veh_direction = veh.direction;
+                let angle = veh_direction.angle_between(diff);
+                let angle = if angle >= 0.0 {
+                    f32::min(angle, 0.7)
+                } else {
+                    f32::max(angle, -0.7)
+                } * time.delta_seconds();
+                let quat = Quat::from_axis_angle(Vec3::Z, angle);
+                tran.rotation *= quat;
+                let rotate = Vec2::from_angle(angle);
+                veh.direction = rotate.rotate(veh.direction);
+            }
         }
     }
 }
@@ -100,7 +107,6 @@ fn vehicle_update_direction(
 fn vehicle_movement_sys(time: Res<Time>, mut q: Query<(&mut Vel, &Vehicle)>) {
     for (mut vel, veh) in q.iter_mut() {
         let speed = veh.current_speed();
-        println!("{speed}");
         let direction = veh.direction.normalize_or_zero();
         vel.0 = vel.0.lerp(direction * speed, time.delta_seconds() * 5.0);
         vel.0 += direction * speed * time.delta_seconds();
@@ -137,6 +143,7 @@ fn screen_to_world(
 }
 
 fn set_target_sys(
+    mut commands: Commands,
     mut mouse: EventReader<MouseButtonInput>,
     // need to get window dimensions
     windows: Res<Windows>,
@@ -151,12 +158,53 @@ fn set_target_sys(
                 let window = windows.get_primary().unwrap();
                 if let Some(cursor) = window.cursor_position() {
                     let cursor = screen_to_world(window, camera, camera_transform, cursor);
+                    let entity = commands
+                        .spawn_bundle(SpriteBundle {
+                            sprite: Sprite {
+                                custom_size: Some(Vec2::splat(VEHICLE_SIZE / 3.0)),
+                                color: Color::RED,
+                                ..default()
+                            },
+                            transform: Transform {
+                                translation: cursor.extend(0.0),
+                                ..default()
+                            },
+                            ..Default::default()
+                        })
+                        .insert_bundle(SensorBundle {
+                            shape: CollisionShape::Square(Square::size(Vec2::splat(
+                                VEHICLE_SIZE / 3.0,
+                            ))),
+                            ..Default::default()
+                        })
+                        .id();
                     for mut dest in q_dest.iter_mut() {
-                        dest.0 = cursor;
+                        dest.push(entity.clone(), cursor);
                     }
                 }
             }
             _ => {}
+        }
+    }
+}
+
+fn arrive_sys(
+    mut commands: Commands,
+    mut dest: Query<&mut Destination>,
+    q: Query<(Entity, &Sensor)>,
+) {
+    for (ent, s) in q.iter() {
+        for &d in s.bodies.iter() {
+            if let Ok(mut dest) = dest.get_mut(d) {
+                if let Some((dest_ent, dest_position)) = dest.next() {
+                    if *dest_ent == ent {
+                        println!("Arrive {dest_position}!!");
+                        dest.arrive();
+                        commands.entity(ent).despawn();
+                        println!("{:?}", dest);
+                    }
+                }
+            }
         }
     }
 }
