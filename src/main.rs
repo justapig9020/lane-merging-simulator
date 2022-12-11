@@ -3,18 +3,13 @@ mod vehicle;
 use bevy::input::mouse::MouseButtonInput;
 use bevy::input::ButtonState;
 use bevy::prelude::*;
-use bevy::render::camera::RenderTarget;
 use bevy_physimple::prelude::*;
+use pid::Pid;
 use vehicle::Destination;
 use vehicle::Vehicle;
+use vehicle::VEHICLE_SIZE;
 
-// unit:
-//  distance: meter
-//  time: second
-const SPEED: f32 = 60.0 * 1000.0 / 3600.0;
-const MAX_SPEED: f32 = 80.0 * 1000.0 / 3600.0;
-const MAX_ACCELERATION: f32 = 6.0;
-const VEHICLE_SIZE: f32 = 25.0;
+const SCALE: f32 = 5.0;
 
 fn main() {
     let mut app = App::new();
@@ -31,16 +26,19 @@ fn main() {
     app.add_startup_system(setup_sys);
     app.add_system(bevy::window::close_on_esc)
         .add_system(bevy::input::mouse::mouse_button_input_system)
-        .add_system(move_vehicle_sys)
-        .add_system(vehicle_movement_sys.after(move_vehicle_sys))
+        .add_system(vehicle_update_speed_sys)
+        .add_system(vehicle_update_direction)
+        .add_system(vehicle_movement_sys.after(vehicle_update_speed_sys))
+        .add_system(move_vehicle_sys.after(vehicle_movement_sys))
         .add_system(set_target_sys);
     app.run();
 }
 
-fn setup_sys(mut coms: Commands) {
+fn setup_sys(mut coms: Commands, a_server: Res<AssetServer>) {
     coms.spawn_bundle(Camera2dBundle::default());
 
     // Vehicle
+    let icon: Handle<Image> = a_server.load("vehicle.png");
     coms.spawn_bundle(SpriteBundle {
         sprite: Sprite {
             custom_size: Some(Vec2::splat(VEHICLE_SIZE)),
@@ -53,28 +51,65 @@ fn setup_sys(mut coms: Commands) {
         shape: CollisionShape::Square(Square::size(Vec2::splat(VEHICLE_SIZE))),
         ..Default::default()
     })
-    .insert(Vehicle::new(SPEED, MAX_SPEED, MAX_ACCELERATION))
-    .insert(Destination(Vec2::ZERO));
+    .insert(Vehicle::default())
+    .insert(Destination(Vec2::ZERO))
+    .insert(icon);
 }
 
-fn vehicle_movement_sys(
+fn vehicle_update_speed_sys(
     time: Res<Time>,
-    mut q: Query<(&mut Vel, &Transform, &Vehicle, &Destination)>,
+    mut q: Query<(&Transform, &mut Vehicle, &Destination)>,
 ) {
-    for (mut vel, tran, veh, dest) in q.iter_mut() {
-        let direction = dest.0 - tran.translation.truncate();
-        let direction = direction.normalize_or_zero();
-        vel.0 = vel
-            .0
-            .lerp(direction * veh.current_speed(), time.delta_seconds() * 5.0);
-        vel.0 += direction * veh.current_speed() * time.delta_seconds();
+    for (tran, mut veh, dest) in q.iter_mut() {
+        let tran = tran.translation.truncate();
+        let diff = dest.0 - tran;
+        let forward = diff.dot(veh.direction) >= 0.0;
+        let error = if forward {
+            diff.length() * -1.0
+        } else {
+            diff.length()
+        } / SCALE;
+        println!("error: {error}");
+        veh.update_speed(error, time.delta_seconds());
+    }
+}
+
+fn vehicle_update_direction(
+    time: Res<Time>,
+    mut q: Query<(&mut Transform, &mut Vehicle, &Destination)>,
+) {
+    for (mut tran, mut veh, dest) in q.iter_mut() {
+        let local = tran.translation.truncate();
+        let diff = (dest.0 - local).normalize_or_zero();
+        if diff.length() != 0.0 {
+            let veh_direction = veh.direction;
+            let angle = veh_direction.angle_between(diff);
+            let angle = if angle >= 0.0 {
+                f32::min(angle, 0.7)
+            } else {
+                f32::max(angle, -0.7)
+            } * time.delta_seconds();
+            let quat = Quat::from_axis_angle(Vec3::Z, angle);
+            tran.rotation *= quat;
+            let rotate = Vec2::from_angle(angle);
+            veh.direction = rotate.rotate(veh.direction);
+        }
+    }
+}
+
+fn vehicle_movement_sys(time: Res<Time>, mut q: Query<(&mut Vel, &Vehicle)>) {
+    for (mut vel, veh) in q.iter_mut() {
+        let speed = veh.current_speed();
+        println!("{speed}");
+        let direction = veh.direction.normalize_or_zero();
+        vel.0 = vel.0.lerp(direction * speed, time.delta_seconds() * 5.0);
+        vel.0 += direction * speed * time.delta_seconds();
     }
 }
 
 fn move_vehicle_sys(time: Res<Time>, mut q: Query<(&Vel, &mut Transform)>) {
-    let scale = 100.0;
     for (v, mut t) in q.iter_mut() {
-        t.translation += v.0.extend(0.0) * time.delta_seconds() * scale;
+        t.translation += v.0.extend(0.0) * time.delta_seconds() * SCALE;
     }
 }
 
@@ -116,7 +151,6 @@ fn set_target_sys(
                 let window = windows.get_primary().unwrap();
                 if let Some(cursor) = window.cursor_position() {
                     let cursor = screen_to_world(window, camera, camera_transform, cursor);
-                    println!("Spawn a bundle @ {cursor}");
                     for mut dest in q_dest.iter_mut() {
                         dest.0 = cursor;
                     }
