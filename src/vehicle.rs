@@ -1,21 +1,22 @@
 use bevy::prelude::*;
 
-#[derive(Component)]
+/// Speed unit: km / hr
+#[derive(Component, Debug)]
 pub struct Vehicle {
-    speed: f64,
-    max_speed: f64,
-    max_acceleration: f64,
+    speed: f32,
+    max_speed: f32,
+    max_acceleration: f32,
 }
 
 impl Vehicle {
-    pub fn new(speed: f64, max_speed: f64, max_acceleration: f64) -> Self {
+    pub fn new(speed: f32, max_speed: f32, max_acceleration: f32) -> Self {
         Self {
             speed,
             max_speed,
             max_acceleration,
         }
     }
-    pub fn eariliest_arrival_time(&self, distance: f64) -> f64 {
+    pub fn eariliest_arrival_time(&self, distance: f32) -> f32 {
         let cs = self.speed;
         let ms = self.max_speed;
         let ma = self.max_acceleration;
@@ -28,4 +29,10 @@ impl Vehicle {
         };
         eat
     }
+    pub fn current_speed(&self) -> f32 {
+        self.speed
+    }
 }
+
+#[derive(Component)]
+pub struct Destination(pub Vec2);
