@@ -4,12 +4,11 @@ use bevy::input::mouse::MouseButtonInput;
 use bevy::input::ButtonState;
 use bevy::prelude::*;
 use bevy_physimple::prelude::*;
-use pid::Pid;
 use vehicle::Destination;
 use vehicle::Vehicle;
 use vehicle::VEHICLE_SIZE;
 
-const SCALE: f32 = 5.0;
+const SCALE: f32 = 10.0;
 
 fn main() {
     let mut app = App::new();
@@ -62,17 +61,15 @@ fn vehicle_update_speed_sys(
     mut q: Query<(&Transform, &mut Vehicle, &Destination)>,
 ) {
     for (tran, mut veh, dest) in q.iter_mut() {
+        let is_last = dest.is_last();
         if let Some((_, dest)) = dest.next() {
             let veh_position = tran.translation.truncate();
             println!("veh: {veh_position}");
             println!("dest: {dest}");
             let diff = *dest - veh_position;
             let forward = diff.dot(veh.direction) >= 0.0;
-            let error = if forward {
-                diff.length() * -1.0
-            } else {
-                diff.length()
-            } / SCALE;
+            let diff = diff.length() + if is_last { 0.0 } else { 20.0 }; // Add an additional error to avoid decelerate too much
+            let error = if forward { diff * -1.0 } else { diff } / SCALE;
             println!("error: {error}");
             veh.update_speed(error, time.delta_seconds());
         } else {

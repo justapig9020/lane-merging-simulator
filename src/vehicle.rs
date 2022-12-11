@@ -28,7 +28,7 @@ impl Default for Vehicle {
     fn default() -> Self {
         let kp = 0.05;
         let ki = 0.0;
-        let kd = 8.0;
+        let kd = 6.0;
         let p_limit = 100.0;
         let i_limit = 0.0;
         let d_limit = 100.0;
@@ -87,6 +87,9 @@ pub struct Destination {
 }
 
 impl Destination {
+    pub fn is_last(&self) -> bool {
+        self.dests.len() == 0
+    }
     pub fn next(&self) -> Option<&(Entity, Vec2)> {
         self.dests.get(0)
     }
