@@ -76,6 +76,9 @@ impl Vehicle {
             self.max_speed * -1.0,
         );
     }
+    pub fn stop(&mut self) {
+        self.speed = f32::max(0.0, self.speed - self.max_break / 2.0);
+    }
 }
 
 #[derive(Component, Default, Debug)]

@@ -75,6 +75,8 @@ fn vehicle_update_speed_sys(
             } / SCALE;
             println!("error: {error}");
             veh.update_speed(error, time.delta_seconds());
+        } else {
+            veh.stop();
         }
     }
 }
