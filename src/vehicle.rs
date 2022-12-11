@@ -1,3 +1,6 @@
+use bevy::prelude::*;
+
+#[derive(Component)]
 pub struct Vehicle {
     speed: f64,
     max_speed: f64,
