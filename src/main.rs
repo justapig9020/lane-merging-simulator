@@ -57,19 +57,24 @@ fn setup_sys(mut coms: Commands) {
     .insert(Destination(Vec2::ZERO));
 }
 
-fn vehicle_movement_sys(time: Res<Time>, mut q: Query<(&mut Vel, &Vehicle)>) {
-    for (mut vel, veh) in q.iter_mut() {
-        let vec = Vec2 { x: 1.0, y: 0.0 };
+fn vehicle_movement_sys(
+    time: Res<Time>,
+    mut q: Query<(&mut Vel, &Transform, &Vehicle, &Destination)>,
+) {
+    for (mut vel, tran, veh, dest) in q.iter_mut() {
+        let direction = dest.0 - tran.translation.truncate();
+        let direction = direction.normalize_or_zero();
         vel.0 = vel
             .0
-            .lerp(vec * veh.current_speed(), time.delta_seconds() * 5.0);
-        vel.0 += vec * veh.current_speed() * time.delta_seconds();
+            .lerp(direction * veh.current_speed(), time.delta_seconds() * 5.0);
+        vel.0 += direction * veh.current_speed() * time.delta_seconds();
     }
 }
 
 fn move_vehicle_sys(time: Res<Time>, mut q: Query<(&Vel, &mut Transform)>) {
+    let scale = 100.0;
     for (v, mut t) in q.iter_mut() {
-        t.translation += v.0.extend(0.0) * time.delta_seconds();
+        t.translation += v.0.extend(0.0) * time.delta_seconds() * scale;
     }
 }
 
@@ -97,7 +102,6 @@ fn screen_to_world(
 }
 
 fn set_target_sys(
-    mut coms: Commands,
     mut mouse: EventReader<MouseButtonInput>,
     // need to get window dimensions
     windows: Res<Windows>,
@@ -113,18 +117,6 @@ fn set_target_sys(
                 if let Some(cursor) = window.cursor_position() {
                     let cursor = screen_to_world(window, camera, camera_transform, cursor);
                     println!("Spawn a bundle @ {cursor}");
-                    coms.spawn_bundle(SpriteBundle {
-                        sprite: Sprite {
-                            custom_size: Some(Vec2::splat(VEHICLE_SIZE)),
-                            color: Color::CRIMSON,
-                            ..Default::default()
-                        },
-                        transform: Transform {
-                            translation: cursor.extend(0.0),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    });
                     for mut dest in q_dest.iter_mut() {
                         dest.0 = cursor;
                     }
