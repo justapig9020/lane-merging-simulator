@@ -88,7 +88,7 @@ pub struct Destination {
 
 impl Destination {
     pub fn is_last(&self) -> bool {
-        self.dests.len() == 0
+        self.dests.len() == 1
     }
     pub fn next(&self) -> Option<&(Entity, Vec2)> {
         self.dests.get(0)

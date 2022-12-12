@@ -3,6 +3,7 @@ mod vehicle;
 use bevy::input::mouse::MouseButtonInput;
 use bevy::input::ButtonState;
 use bevy::prelude::*;
+use bevy::time::FixedTimestep;
 use bevy_physimple::prelude::*;
 use vehicle::Destination;
 use vehicle::Vehicle;
@@ -31,6 +32,11 @@ fn main() {
         .add_system(move_vehicle_sys.after(vehicle_movement_sys))
         .add_system(arrive_sys.after(move_vehicle_sys))
         .add_system(set_target_sys);
+    app.add_system_set(
+        SystemSet::new()
+            .with_run_criteria(FixedTimestep::step(0.5))
+            .with_system(log_sys),
+    );
     app.run();
 }
 
@@ -64,13 +70,10 @@ fn vehicle_update_speed_sys(
         let is_last = dest.is_last();
         if let Some((_, dest)) = dest.next() {
             let veh_position = tran.translation.truncate();
-            println!("veh: {veh_position}");
-            println!("dest: {dest}");
             let diff = *dest - veh_position;
             let forward = diff.dot(veh.direction) >= 0.0;
             let diff = diff.length() + if is_last { 0.0 } else { 20.0 }; // Add an additional error to avoid decelerate too much
             let error = if forward { diff * -1.0 } else { diff } / SCALE;
-            println!("error: {error}");
             veh.update_speed(error, time.delta_seconds());
         } else {
             veh.stop();
@@ -195,15 +198,23 @@ fn arrive_sys(
     for (ent, s) in q.iter() {
         for &d in s.bodies.iter() {
             if let Ok(mut dest) = dest.get_mut(d) {
-                if let Some((dest_ent, dest_position)) = dest.next() {
+                if let Some((dest_ent, _dest_position)) = dest.next() {
                     if *dest_ent == ent {
-                        println!("Arrive {dest_position}!!");
                         dest.arrive();
                         commands.entity(ent).despawn();
-                        println!("{:?}", dest);
                     }
                 }
             }
+        }
+    }
+}
+
+fn log_sys(q: Query<(&Vehicle, &Transform, &Destination)>) {
+    for (veh, tran, dest) in q.iter() {
+        if let Some((_, dest)) = dest.next() {
+            let diff = *dest - tran.translation.truncate();
+            let distance = diff.length();
+            println!("EAT: {}", veh.eariliest_arrival_time(distance));
         }
     }
 }
